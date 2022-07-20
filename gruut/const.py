@@ -32,6 +32,7 @@ LANG_ALIASES = {
     "ru": "ru-ru",
     "sv": "sv-se",
     "sw": "sw",
+    "ko": "ko",
     "zh": "zh-cn",
 }
 
@@ -117,6 +118,7 @@ class GraphType:
 DEFAULT_SPLIT_PATTERN = re.compile(r"(\s+)")
 
 NORMALIZE_WHITESPACE_PATTERN = re.compile(r"\s+")
+NORMALIZE_PUNCTUATION_PATTERN = re.compile(r"[,|?|\.|\"]+")
 SURROUNDING_WHITESPACE_PATTERN = re.compile(r"^(\s*)\S+(\s*)$")
 HAS_DIGIT_PATTERN = re.compile(r"[0-9]")
 
@@ -568,6 +570,9 @@ def default_normalize_whitespace(s: str) -> str:
     """Replace multiple spaces with single space"""
     return NORMALIZE_WHITESPACE_PATTERN.sub(" ", s.strip())
 
+def default_normalize_punctuation(s: str) -> str:
+    """Remove punctuation"""
+    return NORMALIZE_PUNCTUATION_PATTERN.sub("", s)
 
 def maybe_compile_regex(
     str_or_pattern: typing.Union[str, REGEX_PATTERN]
@@ -611,6 +616,9 @@ class TextProcessorSettings:
 
     normalize_whitespace: typing.Callable[[str], str] = default_normalize_whitespace
     """Normalizes whitespace in a string"""
+
+    normalize_punctuation: typing.Callable[[str], str] = default_normalize_punctuation
+    """Normalizes punctuation in a string"""
 
     # Punctuations
     begin_punctuations: typing.Optional[typing.Set[str]] = None
@@ -731,7 +739,14 @@ class TextProcessorSettings:
     post_process_sentence: typing.Optional[PostProcessSentence] = None
     """Optional function to post-process each sentence in the graph before post_process_graph"""
 
+    external_phonemizer: typing.Optional = None
+
+    role_tag: str = None
+
     def __post_init__(self):
+        if self.split_words is None:
+            self.split_words = default_split_words
+
         # Languages/locales
         if self.babel_locale is None:
             if "-" in self.lang:

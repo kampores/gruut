@@ -1595,8 +1595,19 @@ class TextProcessor:
             text = settings.pre_process_text(text)
 
         # Split into separate words (preseving whitespace).
-        for word_text in settings.split_words(text):
+        if lang == "ko" or lang == "jp" or lang == "zh_CN":
+            split_words = settings.external_phonemizer.pos(text)
+        else:
+            split_words = settings.split_words(text)
+        # for word_text in settings.split_words(text):
+        for word_text in split_words:
+            if type(word_text) is tuple:
+                role = settings.role_tag + word_text[1]
+                word_text = word_text[0]
+            else:
+                role = None
             word_text_norm = settings.normalize_whitespace(word_text)
+            word_text_norm = settings.normalize_punctuation(word_text_norm)
             if not word_text_norm:
                 continue
 
@@ -1618,7 +1629,7 @@ class TextProcessor:
 
             if not in_lexicon:
                 # Check main language lexicon
-                in_lexicon = self._is_word_in_lexicon(word_text_norm, settings)
+                in_lexicon = self._is_word_in_lexicon(word_text_norm, settings, role=role)
 
             word_node = WordNode(
                 node=len(graph),
@@ -2091,13 +2102,15 @@ class TextProcessor:
         return True
 
     def _is_word_in_lexicon(
-        self, word: str, settings: TextProcessorSettings
+        # self, word: str, settings: TextProcessorSettings
+        self, word: str, settings: TextProcessorSettings, role=None
     ) -> typing.Optional[bool]:
         """True if word is in the lexicon"""
         if settings.lookup_phonemes is None:
             return None
 
-        return bool(settings.lookup_phonemes(word, do_transforms=False))
+        # return bool(settings.lookup_phonemes(word, do_transforms=False))
+        return bool(settings.lookup_phonemes(word, role=role, do_transforms=False))
 
     # -------------------------------------------------------------------------
     # Verbalization

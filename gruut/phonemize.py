@@ -6,6 +6,7 @@ import typing
 from pathlib import Path
 
 from gruut.const import PHONEMES_TYPE
+import espeak_phonemizer
 
 # -----------------------------------------------------------------------------
 
@@ -26,6 +27,8 @@ class SqlitePhonemizer:
 
     def __init__(
         self,
+        lang:str,
+        db_update_on: bool,
         db_conn: sqlite3.Connection,
         lexicon: typing.Optional[typing.Dict[str, ROLE_TO_PHONEMES]] = None,
         g2p_model: typing.Optional[typing.Dict[str, typing.Union[str, Path]]] = None,
@@ -43,6 +46,10 @@ class SqlitePhonemizer:
         self.word_transform_funcs = word_transform_funcs or []
 
         self.casing_func = casing_func
+
+        self.espeak_phonemizer = espeak_phonemizer.Phonemizer(default_voice=lang)
+
+        self.db_update_on = db_update_on
 
     def __call__(
         self, word: str, role: typing.Optional[str] = None, do_transforms: bool = True
@@ -88,12 +95,33 @@ class SqlitePhonemizer:
                 continue
 
             # Load pronunciations for word from database.
-            cursor = self.db_conn.execute(
-                "SELECT role, phonemes FROM word_phonemes WHERE word = ? ORDER BY pron_order",
-                (lookup_word,),
-            )
+            if not role:
+                cursor = self.db_conn.execute(
+                    "SELECT role, phonemes FROM word_phonemes WHERE word = ? ORDER BY pron_order",
+                    (lookup_word,),
+                )
+            else:
+                cursor = self.db_conn.execute(
+                    "SELECT role, phonemes FROM word_phonemes WHERE word = ? AND role = ? ORDER BY pron_order",
+                    (lookup_word, role),
+                )
+            rows = cursor.fetchall()
+            if not rows :
+                phonemes = self.espeak_phonemizer.phonemize(lookup_word, keep_clause_breakers=False)
+                if self.db_update_on:
+                    pron_order = 0
+                    try:
+                        cursor = self.db_conn.execute(
+                            "INSERT INTO word_phonemes VALUES ((SELECT IFNULL(MAX(id), 0) + 1 FROM word_phonemes), ?, (SELECT IFNULL(MAX(pron_order) + 1, 0) FROM word_phonemes WHERE word = ?), ?, ?)",
+                            (lookup_word, lookup_word, phonemes, role),
+                        )
+                        self.db_conn.commit()
+                    except:
+                        print(lookup_word, pron_order, phonemes, role)
+                        # raise
 
-            for row in cursor:
+            # for row in cursor:
+            for row in rows:
                 if role_to_word is None:
                     # Create new lexicon entry for original word
                     role_to_word = {}

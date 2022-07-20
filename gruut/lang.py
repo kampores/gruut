@@ -7,6 +7,7 @@ import typing
 from pathlib import Path
 
 import networkx as nx
+import konlpy
 
 from gruut.const import PHONEMES_TYPE, GraphType, SentenceNode, Time
 from gruut.g2p import GraphemesToPhonemes
@@ -83,6 +84,7 @@ def get_settings(
                 }
 
                 settings_args["lookup_phonemes"] = DelayedSqlitePhonemizer(
+                    lang_only,
                     lexicon_db_path, **phonemizer_args
                 )
             else:
@@ -166,6 +168,10 @@ def get_settings(
     if lang_only == "sw":
         # Swahili
         return get_sw_settings(lang_dir, **settings_args)
+
+    if lang_only == "ko":
+        # Korean
+        return get_ko_settings(lang_dir, **settings_args)
 
     if lang_only == "zh-cn":
         # Chinese
@@ -806,6 +812,30 @@ def get_sw_settings(lang_dir=None, **settings_args) -> TextProcessorSettings:
 
 
 # -----------------------------------------------------------------------------
+# Korean (ko, 한국어)
+# -----------------------------------------------------------------------------
+
+
+def get_ko_settings(lang_dir=None, **settings_args) -> TextProcessorSettings:
+    """Create settings for Korean"""
+
+    # https://en.wikipedia.org/wiki/Korean_punctuation
+    settings_args = {
+        "major_breaks": {".", "!", "?"},
+        "minor_breaks": {":", ",", "-", ""},
+        "begin_punctuations": {"(", "[", "{", "“", "‘", '"', "'", "《", "〈"},
+        "end_punctuations": {")", "]", "}", "”", "’", '"', "'", "》", "〉"},
+        "word_breaks": {"·"},
+        "split_words": list,
+        "join_str": "",
+        "external_phonemizer": konlpy.tag.Mecab(),
+        "role_tag": "mecab:",
+        **settings_args,
+    }
+    return TextProcessorSettings(lang="ko", **settings_args)
+
+
+# -----------------------------------------------------------------------------
 # Chinese (zh-cn, 汉语)
 # -----------------------------------------------------------------------------
 
@@ -882,8 +912,8 @@ class DelayedPartOfSpeechTagger:
 class DelayedSqlitePhonemizer:
     """Phonemizer that loads on first use"""
 
-    def __init__(self, db_path: typing.Union[str, Path], **phonemizer_args):
-
+    def __init__(self, lang, db_path: typing.Union[str, Path], **phonemizer_args):
+        self.lang = lang
         self.db_path = Path(db_path)
         self.phonemizer: typing.Optional[SqlitePhonemizer] = None
         self.phonemizer_args = phonemizer_args
@@ -894,7 +924,7 @@ class DelayedSqlitePhonemizer:
         if self.phonemizer is None:
             _LOGGER.debug("Connecting to lexicon database at %s", self.db_path)
             db_conn = sqlite3.connect(str(self.db_path))
-            self.phonemizer = SqlitePhonemizer(db_conn=db_conn, **self.phonemizer_args)
+            self.phonemizer = SqlitePhonemizer(self.lang, db_update_on=True, db_conn=db_conn, **self.phonemizer_args)
 
         assert self.phonemizer is not None
         return self.phonemizer(word, role=role, do_transforms=do_transforms)
